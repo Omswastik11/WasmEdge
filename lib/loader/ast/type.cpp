@@ -273,9 +273,12 @@ Expect<void> Loader::loadLimit(AST::Limit &Lim) {
   }));
 
   // Check the type flag with proposals.
-  switch (static_cast<AST::Limit::LimitType>(B)) {
+  auto LimitType = static_cast<AST::Limit::LimitType>(B);
+  switch (LimitType) {
   case AST::Limit::LimitType::SharedNoMax:
   case AST::Limit::LimitType::Shared:
+  case AST::Limit::LimitType::I64SharedNoMax:
+  case AST::Limit::LimitType::I64Shared:
     if (!Conf.hasProposal(Proposal::Threads)) {
       return logLoadError(ErrCode::Value::IntegerTooLarge, FMgr.getLastOffset(),
                           ASTNodeAttr::Type_Limit);
@@ -283,6 +286,8 @@ Expect<void> Loader::loadLimit(AST::Limit &Lim) {
     [[fallthrough]];
   case AST::Limit::LimitType::HasMin:
   case AST::Limit::LimitType::HasMinMax:
+  case AST::Limit::LimitType::I64HasMin:
+  case AST::Limit::LimitType::I64HasMinMax:
     Lim.setType(static_cast<AST::Limit::LimitType>(B));
     break;
   default:
@@ -297,12 +302,12 @@ Expect<void> Loader::loadLimit(AST::Limit &Lim) {
   }
 
   // Read the min and max number.
-  EXPECTED_TRY(uint32_t MinVal, FMgr.readU32().map_error([this](auto E) {
+  EXPECTED_TRY(uint64_t MinVal, FMgr.readU64().map_error([this](auto E) {
     return logLoadError(E, FMgr.getLastOffset(), ASTNodeAttr::Type_Limit);
   }));
   Lim.setMin(MinVal);
   if (Lim.hasMax()) {
-    EXPECTED_TRY(uint32_t MaxVal, FMgr.readU32().map_error([this](auto E) {
+    EXPECTED_TRY(uint64_t MaxVal, FMgr.readU64().map_error([this](auto E) {
       return logLoadError(E, FMgr.getLastOffset(), ASTNodeAttr::Type_Limit);
     }));
     Lim.setMax(MaxVal);
@@ -370,10 +375,20 @@ Expect<void> Loader::loadType(AST::FunctionType &FuncType) {
 // Load binary to construct MemoryType node. See "include/loader/loader.h".
 Expect<void> Loader::loadType(AST::MemoryType &MemType) {
   // Read limit.
-  return loadLimit(MemType.getLimit()).map_error([](auto E) {
-    spdlog::error(ErrInfo::InfoAST(ASTNodeAttr::Type_Memory));
-    return E;
-  });
+  return loadLimit(MemType.getLimit())
+      .and_then([&]() -> Expect<void> {
+        auto &IdxType = MemType.getIdxType();
+        if (MemType.getLimit().is64()) {
+          IdxType = AST::MemoryType::IndexType::I64;
+        } else {
+          IdxType = AST::MemoryType::IndexType::I32;
+        }
+        return {};
+      })
+      .map_error([](auto E) {
+        spdlog::error(ErrInfo::InfoAST(ASTNodeAttr::Type_Memory));
+        return E;
+      });
 }
 
 // Load binary to construct TableType node. See "include/loader/loader.h".
