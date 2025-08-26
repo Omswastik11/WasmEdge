@@ -140,7 +140,6 @@ jobs:
             -DLLVM_CONFIG_EXECUTABLE=/usr/bin/llvm-config-15 \
             -DCMAKE_INSTALL_PREFIX=/workplace/install \
             ..
-            /workplace
 
           # Build with limited parallelism to avoid OOM
           ninja -j1 -v
