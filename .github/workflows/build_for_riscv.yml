@@ -91,7 +91,7 @@ jobs:
           set(CMAKE_FIND_ROOT_PATH "${find_root_list}")
           EOF
 
-          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../riscv-toolchain.cmake \
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE= riscv-toolchain.cmake \
           -DLLVM_DIR=/usr/lib/llvm-15/lib/cmake/llvm \
           -DLLVM_CONFIG_EXECUTABLE=/usr/bin/llvm-config-15 \
           ..
