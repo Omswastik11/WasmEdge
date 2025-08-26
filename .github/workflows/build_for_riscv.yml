@@ -84,9 +84,10 @@ jobs:
           --shm-size=2g
         shell: /bin/bash
         env: |
-          DEBIAN_FRONTEND=noninteractive
+          DEBIAN_FRONTEND: noninteractive
         install: |
           set -e
+          export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y build-essential cmake git wget ca-certificates \
             gcc-riscv64-linux-gnu g++-riscv64-linux-gnu libc6-dev-riscv64-cross \
