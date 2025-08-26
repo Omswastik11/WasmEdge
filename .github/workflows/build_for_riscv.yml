@@ -46,6 +46,7 @@ jobs:
     name: RISC-V64
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 180
     steps:
     - name: Harden the runner (Audit all outbound calls)
       uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
@@ -55,57 +56,108 @@ jobs:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         fetch-depth: 0
+        
     - name: Ensure git safe directory
       run: |
         git config --global --add safe.directory $(pwd)
+        
+    - name: Free up disk space
+      run: |
+        sudo apt-get clean
+        sudo rm -rf /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        df -h
+        
     - uses: uraimo/run-on-arch-action@aa8e672a03e10b403401927ea2ceda57e1b68ac3 # v3
       name: Build WasmEdge
       with:
         arch: riscv64
         distro: ubuntu22.04
         githubToken: ${{ github.token }}
+        # Disable registry cache to avoid permission issues
+        setup: |
+          mkdir -p "${PWD}/artifacts"
         dockerRunArgs: |
           --volume "${PWD}:/workplace"
-        shell: /bin/sh
+          --platform linux/riscv64
+        shell: /bin/bash
+        env: |
+          DEBIAN_FRONTEND: noninteractive
         install: |
-          apt update
-          apt install -y build-essential cmake git wget ca-certificates \
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y build-essential cmake git wget ca-certificates \
             gcc-riscv64-linux-gnu g++-riscv64-linux-gnu libc6-dev-riscv64-cross \
-            llvm-15-dev liblld-15-dev zlib1g-dev wabt python3 pkg-config
+            llvm-15-dev liblld-15-dev zlib1g-dev wabt python3 pkg-config \
+            ninja-build
         run: |
+          set -e
           cd /workplace
           mkdir -p build && cd build
-          cat > riscv-toolchain.cmake << 'EOF'
+          
+          # Create toolchain file with absolute path references
+          cat > /workplace/build/riscv-toolchain.cmake << 'EOF'
           # RISC-V Cross-compilation Toolchain for WasmEdge
           set(CMAKE_SYSTEM_NAME Linux)
           set(CMAKE_SYSTEM_PROCESSOR riscv64)
           set(CMAKE_C_COMPILER riscv64-linux-gnu-gcc)
           set(CMAKE_CXX_COMPILER riscv64-linux-gnu-g++)
           set(CMAKE_ASM_COMPILER riscv64-linux-gnu-gcc)
+          
+          # Verify compilers exist
+          find_program(CMAKE_C_COMPILER riscv64-linux-gnu-gcc REQUIRED)
+          find_program(CMAKE_CXX_COMPILER riscv64-linux-gnu-g++ REQUIRED)
+          
           set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=rv64gc -mabi=lp64d")
           set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=rv64gc -mabi=lp64d")
-          set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
-          set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+          set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
+          set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
           set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++")
-          set(CMAKE_FIND_ROOT_PATH "${find_root_list}")
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
           EOF
 
-          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../riscv-toolchain.cmake \
-          -DLLVM_DIR=/usr/lib/llvm-15/lib/cmake/llvm \
-          -DLLVM_CONFIG_EXECUTABLE=/usr/bin/llvm-config-15 \
-          ..
+          # Verify toolchain file exists
+          ls -la /workplace/build/riscv-toolchain.cmake
+          cat /workplace/build/riscv-toolchain.cmake
+          
+          # Verify compilers are available
+          which riscv64-linux-gnu-gcc || (echo "GCC not found" && exit 1)
+          which riscv64-linux-gnu-g++ || (echo "G++ not found" && exit 1)
+          riscv64-linux-gnu-gcc --version
+          
+          # Verify ninja is available
+          which ninja || (echo "Ninja not found" && exit 1)
+          ninja --version
 
-          make -j$(nproc)
-          make install
-          wasmedge -v
-          wasmedgec -v
-          wasmedge compile -h
-          wasmedge run -h
-          cd ../examples/wasm
+          # Configure with explicit toolchain file path
+          cmake -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=/workplace/build/riscv-toolchain.cmake \
+            -DCMAKE_MAKE_PROGRAM=$(which ninja) \
+            -DLLVM_DIR=/usr/lib/llvm-15/lib/cmake/llvm \
+            -DLLVM_CONFIG_EXECUTABLE=/usr/bin/llvm-config-15 \
+            -DCMAKE_INSTALL_PREFIX=/workplace/install \
+            ...
+            /workplace
+
+          # Build with limited parallelism to avoid OOM
+          ninja -j1 -v
+          ninja install
+          
+          # Verify build
+          /workplace/install/bin/wasmedge -v
+          /workplace/install/bin/wasmedgec -v
+          /workplace/install/bin/wasmedge compile -h
+          /workplace/install/bin/wasmedge run -h
+          
+          # Test with fibonacci example
+          cd /workplace/examples/wasm
           wat2wasm fibonacci.wat -o fibonacci.wasm
-          wasmedgec fibonacci.wasm fibonacci_aot_c.wasm
-          wasmedge --reactor fibonacci_aot_c.wasm fib 30
-          wasmedge run --reactor fibonacci_aot_c.wasm fib 30
-          wasmedge compile fibonacci.wasm fibonacci_aot_compile.wasm
-          wasmedge --reactor fibonacci_aot_compile.wasm fib 30
-          wasmedge run --reactor fibonacci_aot_compile.wasm fib 30
+          /workplace/install/bin/wasmedgec fibonacci.wasm fibonacci_aot_c.wasm
+          /workplace/install/bin/wasmedge --reactor fibonacci_aot_c.wasm fib 30
+          /workplace/install/bin/wasmedge run --reactor fibonacci_aot_c.wasm fib 30
+          /workplace/install/bin/wasmedge compile fibonacci.wasm fibonacci_aot_compile.wasm
+          /workplace/install/bin/wasmedge --reactor fibonacci_aot_compile.wasm fib 30
+          /workplace/install/bin/wasmedge run --reactor fibonacci_aot_compile.wasm fib 30
