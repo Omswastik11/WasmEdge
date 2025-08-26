@@ -102,6 +102,7 @@ jobs:
           wasmedgec -v
           wasmedge compile -h
           wasmedge run -h
+          
           cd ../examples/wasm
           wat2wasm fibonacci.wat -o fibonacci.wasm
           wasmedgec fibonacci.wasm fibonacci_aot_c.wasm
