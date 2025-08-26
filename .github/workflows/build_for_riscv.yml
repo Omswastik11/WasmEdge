@@ -97,6 +97,7 @@ jobs:
 
           make -j$(nproc)
           make install
+          
           wasmedge -v
           wasmedgec -v
           wasmedge compile -h
