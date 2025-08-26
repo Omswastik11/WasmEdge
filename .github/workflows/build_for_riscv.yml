@@ -139,7 +139,7 @@ jobs:
             -DLLVM_DIR=/usr/lib/llvm-15/lib/cmake/llvm \
             -DLLVM_CONFIG_EXECUTABLE=/usr/bin/llvm-config-15 \
             -DCMAKE_INSTALL_PREFIX=/workplace/install \
-            ...
+            ..
             /workplace
 
           # Build with limited parallelism to avoid OOM
