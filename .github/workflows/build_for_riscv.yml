@@ -79,9 +79,6 @@ jobs:
         dockerRunArgs: |
           --volume "${PWD}:/workplace"
           --platform linux/riscv64
-          --memory=7g
-          --memory-swap=8g
-          --shm-size=2g
         shell: /bin/bash
         env: |
           DEBIAN_FRONTEND: noninteractive
@@ -141,11 +138,8 @@ jobs:
             -DCMAKE_MAKE_PROGRAM=$(which ninja) \
             -DLLVM_DIR=/usr/lib/llvm-15/lib/cmake/llvm \
             -DLLVM_CONFIG_EXECUTABLE=/usr/bin/llvm-config-15 \
-            -DWASMEDGE_BUILD_TESTS=OFF \
-            -DWASMEDGE_BUILD_EXAMPLES=ON \
-            -DWASMEDGE_BUILD_PLUGINS=OFF \
-            -DWASMEDGE_BUILD_AOT_RUNTIME=ON \
             -DCMAKE_INSTALL_PREFIX=/workplace/install \
+            ...
             /workplace
 
           # Build with limited parallelism to avoid OOM
